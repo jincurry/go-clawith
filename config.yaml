@@ -1,0 +1,31 @@
+server:
+  port: "8080"
+  mode: "debug"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "clawith"
+  password: "clawith"
+  dbname: "clawith"
+  sslmode: "disable"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+jwt:
+  secret: "change-me-in-production"
+  expire_hour: 72
+
+llm:
+  default_provider: "openai"
+  openai:
+    api_key: ""
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o"
+  anthropic:
+    api_key: ""
+    base_url: "https://api.anthropic.com"
+    model: "claude-sonnet-4-20250514"
