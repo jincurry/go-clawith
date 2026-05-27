@@ -96,6 +96,23 @@ export const api = {
     delete: (id: string) =>
       request<void>(`/api/triggers/${id}`, { method: "DELETE" }),
   },
+
+  mcp: {
+    listServers: () =>
+      request<{ data: MCPServerInfo[] }>("/api/mcp/servers"),
+    connect: (data: ConnectMCPInput) =>
+      request<MCPConnectResult>("/api/mcp/servers", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    disconnect: (id: string) =>
+      request<void>(`/api/mcp/servers/${id}`, { method: "DELETE" }),
+    refresh: (id: string) =>
+      request<{ tools_synced: number; tools: MCPToolDef[] }>(
+        `/api/mcp/servers/${id}/refresh`,
+        { method: "POST" }
+      ),
+  },
 };
 
 export function createWebSocket(token: string): WebSocket {
@@ -221,4 +238,35 @@ export interface CreateTriggerInput {
   config: string;
   action: string;
   is_active: boolean;
+}
+
+export interface MCPServerInfo {
+  id: string;
+  name: string;
+  transport: string;
+  endpoint?: string;
+  command?: string;
+  tools: string[];
+}
+
+export interface ConnectMCPInput {
+  name: string;
+  transport: string;
+  endpoint?: string;
+  command?: string;
+  args?: string[];
+  env?: string[];
+}
+
+export interface MCPConnectResult {
+  server_id: string;
+  name: string;
+  tools_synced: number;
+  tools: MCPToolDef[];
+}
+
+export interface MCPToolDef {
+  name: string;
+  description?: string;
+  inputSchema: unknown;
 }

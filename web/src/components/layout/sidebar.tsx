@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Settings,
   LogOut,
+  Server,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/tools", label: "Tools", icon: Wrench },
+  { href: "/mcp", label: "MCP Servers", icon: Server },
   { href: "/triggers", label: "Triggers", icon: Zap },
 ];
 

@@ -14,6 +14,7 @@ type Handlers struct {
 	Tool      *ToolHandler
 	Trigger   *TriggerHandler
 	Workspace *WorkspaceHandler
+	MCP       *MCPHandler
 }
 
 func SetupRouter(cfg *config.Config, h *Handlers) *gin.Engine {
@@ -98,6 +99,15 @@ func SetupRouter(cfg *config.Config, h *Handlers) *gin.Engine {
 			workspaces.GET("/:id/files", h.Workspace.ListFiles)
 			workspaces.GET("/files/:file_id/download", h.Workspace.Download)
 			workspaces.DELETE("/files/:file_id", h.Workspace.DeleteFile)
+		}
+
+		// MCP Servers
+		mcpGroup := api.Group("/mcp")
+		{
+			mcpGroup.POST("/servers", h.MCP.Connect)
+			mcpGroup.GET("/servers", h.MCP.ListServers)
+			mcpGroup.POST("/servers/:id/refresh", h.MCP.RefreshTools)
+			mcpGroup.DELETE("/servers/:id", h.MCP.Disconnect)
 		}
 	}
 

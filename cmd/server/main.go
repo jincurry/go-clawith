@@ -7,6 +7,7 @@ import (
 	"github.com/jincurry/go-clawith/internal/database"
 	"github.com/jincurry/go-clawith/internal/handler"
 	"github.com/jincurry/go-clawith/internal/llm"
+	"github.com/jincurry/go-clawith/internal/mcp"
 	"github.com/jincurry/go-clawith/internal/repository"
 	"github.com/jincurry/go-clawith/internal/service"
 	"github.com/jincurry/go-clawith/internal/tool"
@@ -39,8 +40,9 @@ func main() {
 	// LLM
 	llmRegistry := llm.NewRegistry(cfg.LLM)
 
-	// Tool Executor + Agent Runner
-	toolExecutor := tool.NewExecutor()
+	// MCP Manager + Tool Executor + Agent Runner
+	mcpManager := mcp.NewManager()
+	toolExecutor := tool.NewExecutor(mcpManager)
 	agentRunner := service.NewAgentRunner(llmRegistry, toolRepo, toolExecutor)
 
 	// Services
@@ -67,6 +69,7 @@ func main() {
 		Tool:      handler.NewToolHandler(toolRepo),
 		Trigger:   handler.NewTriggerHandler(triggerRepo, scheduler),
 		Workspace: handler.NewWorkspaceHandler(db),
+		MCP:       handler.NewMCPHandler(mcpManager, toolRepo),
 	}
 
 	router := handler.SetupRouter(cfg, handlers)

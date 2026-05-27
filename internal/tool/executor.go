@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jincurry/go-clawith/internal/mcp"
 	"github.com/jincurry/go-clawith/internal/model"
 )
 
@@ -18,12 +19,14 @@ type ExecutionResult struct {
 }
 
 type Executor struct {
-	client *http.Client
+	client     *http.Client
+	mcpManager *mcp.Manager
 }
 
-func NewExecutor() *Executor {
+func NewExecutor(mcpManager *mcp.Manager) *Executor {
 	return &Executor{
-		client: &http.Client{Timeout: 30 * time.Second},
+		client:     &http.Client{Timeout: 30 * time.Second},
+		mcpManager: mcpManager,
 	}
 }
 
@@ -106,9 +109,20 @@ func (e *Executor) executeHTTP(ctx context.Context, t *model.Tool, arguments str
 	return &ExecutionResult{Output: string(respBody)}, nil
 }
 
-func (e *Executor) executeMCP(_ context.Context, t *model.Tool, arguments string) (*ExecutionResult, error) {
-	// TODO: integrate with modelcontextprotocol/go-sdk
-	return &ExecutionResult{
-		Error: fmt.Sprintf("MCP tool %q: MCP protocol not yet implemented", t.Name),
-	}, nil
+func (e *Executor) executeMCP(ctx context.Context, t *model.Tool, arguments string) (*ExecutionResult, error) {
+	if e.mcpManager == nil {
+		return &ExecutionResult{Error: "MCP manager not configured"}, nil
+	}
+
+	output, err := e.mcpManager.CallTool(ctx, t.Name, arguments)
+	if err != nil {
+		return &ExecutionResult{Error: fmt.Sprintf("MCP call failed: %v", err)}, nil
+	}
+
+	return &ExecutionResult{Output: output}, nil
+}
+
+// MCPManager returns the MCP manager for external access (e.g., tool sync).
+func (e *Executor) MCPManager() *mcp.Manager {
+	return e.mcpManager
 }
