@@ -9,6 +9,7 @@ import (
 	"github.com/jincurry/go-clawith/internal/llm"
 	"github.com/jincurry/go-clawith/internal/repository"
 	"github.com/jincurry/go-clawith/internal/service"
+	"github.com/jincurry/go-clawith/internal/tool"
 	"github.com/jincurry/go-clawith/internal/trigger"
 	"github.com/jincurry/go-clawith/internal/ws"
 )
@@ -38,10 +39,14 @@ func main() {
 	// LLM
 	llmRegistry := llm.NewRegistry(cfg.LLM)
 
+	// Tool Executor + Agent Runner
+	toolExecutor := tool.NewExecutor()
+	agentRunner := service.NewAgentRunner(llmRegistry, toolRepo, toolExecutor)
+
 	// Services
 	authSvc := service.NewAuthService(userRepo, cfg.JWT)
 	agentSvc := service.NewAgentService(agentRepo)
-	chatSvc := service.NewChatService(chatRepo, agentRepo, llmRegistry)
+	chatSvc := service.NewChatService(chatRepo, agentRepo, agentRunner, llmRegistry)
 
 	// WebSocket Hub
 	hub := ws.NewHub()
@@ -56,11 +61,12 @@ func main() {
 
 	// Handlers
 	handlers := &handler.Handlers{
-		Auth:    handler.NewAuthHandler(authSvc),
-		Agent:   handler.NewAgentHandler(agentSvc),
-		Chat:    handler.NewChatHandler(chatSvc, hub, cfg.JWT),
-		Tool:    handler.NewToolHandler(toolRepo),
-		Trigger: handler.NewTriggerHandler(triggerRepo, scheduler),
+		Auth:      handler.NewAuthHandler(authSvc),
+		Agent:     handler.NewAgentHandler(agentSvc),
+		Chat:      handler.NewChatHandler(chatSvc, hub, cfg.JWT),
+		Tool:      handler.NewToolHandler(toolRepo),
+		Trigger:   handler.NewTriggerHandler(triggerRepo, scheduler),
+		Workspace: handler.NewWorkspaceHandler(db),
 	}
 
 	router := handler.SetupRouter(cfg, handlers)

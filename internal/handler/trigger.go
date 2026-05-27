@@ -107,7 +107,7 @@ func (h *TriggerHandler) Webhook(c *gin.Context) {
 		return
 	}
 
-	go h.scheduler.AddTrigger(t)
+	go h.scheduler.ExecuteTrigger(t.ID)
 
 	c.JSON(http.StatusOK, gin.H{"status": "triggered"})
 }

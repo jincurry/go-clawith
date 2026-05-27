@@ -60,6 +60,11 @@ func (s *Scheduler) AddTrigger(trigger *model.Trigger) error {
 	return s.addTrigger(trigger)
 }
 
+// ExecuteTrigger runs a trigger immediately (used by webhook endpoint).
+func (s *Scheduler) ExecuteTrigger(id uuid.UUID) {
+	s.executeTrigger(id)
+}
+
 func (s *Scheduler) RemoveTrigger(id uuid.UUID) {
 	if entryID, ok := s.entries[id]; ok {
 		s.cron.Remove(entryID)

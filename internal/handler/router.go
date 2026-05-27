@@ -8,11 +8,12 @@ import (
 )
 
 type Handlers struct {
-	Auth    *AuthHandler
-	Agent   *AgentHandler
-	Chat    *ChatHandler
-	Tool    *ToolHandler
-	Trigger *TriggerHandler
+	Auth      *AuthHandler
+	Agent     *AgentHandler
+	Chat      *ChatHandler
+	Tool      *ToolHandler
+	Trigger   *TriggerHandler
+	Workspace *WorkspaceHandler
 }
 
 func SetupRouter(cfg *config.Config, h *Handlers) *gin.Engine {
@@ -86,6 +87,17 @@ func SetupRouter(cfg *config.Config, h *Handlers) *gin.Engine {
 			triggers.POST("", h.Trigger.Create)
 			triggers.GET("/agent/:agent_id", h.Trigger.ListByAgent)
 			triggers.DELETE("/:id", h.Trigger.Delete)
+		}
+
+		// Workspaces
+		workspaces := api.Group("/workspaces")
+		{
+			workspaces.POST("", h.Workspace.Create)
+			workspaces.GET("", h.Workspace.List)
+			workspaces.POST("/:id/files", h.Workspace.Upload)
+			workspaces.GET("/:id/files", h.Workspace.ListFiles)
+			workspaces.GET("/files/:file_id/download", h.Workspace.Download)
+			workspaces.DELETE("/files/:file_id", h.Workspace.DeleteFile)
 		}
 	}
 

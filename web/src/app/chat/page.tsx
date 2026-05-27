@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bot } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { SessionList } from "@/components/chat/session-list";
-import { MessageBubble, StreamingBubble } from "@/components/chat/message-bubble";
+import { MessageBubble, StreamingBubble, ToolCallBubble } from "@/components/chat/message-bubble";
 import { MessageInput } from "@/components/chat/message-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -26,6 +26,7 @@ export default function ChatPage() {
     messages,
     isStreaming,
     streamContent,
+    activeToolCall,
     loadSessions,
     selectSession,
     createSession,
@@ -88,7 +89,10 @@ export default function ChatPage() {
                   {messages.map((msg) => (
                     <MessageBubble key={msg.id} message={msg} />
                   ))}
-                  {isStreaming && <StreamingBubble content={streamContent} />}
+                  {isStreaming && activeToolCall && (
+                    <ToolCallBubble name={activeToolCall.name} status={activeToolCall.status} />
+                  )}
+                  {isStreaming && streamContent && <StreamingBubble content={streamContent} />}
                   <div ref={messagesEndRef} />
                 </div>
               </ScrollArea>

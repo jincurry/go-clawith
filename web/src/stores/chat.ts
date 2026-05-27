@@ -1,12 +1,18 @@
 import { create } from "zustand";
 import { api, createWebSocket, type ChatSession, type Message } from "@/services/api";
 
+interface ToolCallEvent {
+  name: string;
+  status: "calling" | "done";
+}
+
 interface ChatState {
   sessions: ChatSession[];
   currentSession: ChatSession | null;
   messages: Message[];
   isStreaming: boolean;
   streamContent: string;
+  activeToolCall: ToolCallEvent | null;
   ws: WebSocket | null;
 
   loadSessions: () => Promise<void>;
@@ -24,6 +30,7 @@ export const useChat = create<ChatState>((set, get) => ({
   messages: [],
   isStreaming: false,
   streamContent: "",
+  activeToolCall: null,
   ws: null,
 
   loadSessions: async () => {
@@ -32,7 +39,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   selectSession: async (session) => {
-    set({ currentSession: session, messages: [], streamContent: "" });
+    set({ currentSession: session, messages: [], streamContent: "", activeToolCall: null });
     const res = await api.chat.getMessages(session.id);
     set({ messages: res.data || [] });
   },
@@ -71,6 +78,7 @@ export const useChat = create<ChatState>((set, get) => ({
       messages: [...s.messages, userMsg],
       isStreaming: true,
       streamContent: "",
+      activeToolCall: null,
     }));
 
     ws.send(
@@ -93,8 +101,30 @@ export const useChat = create<ChatState>((set, get) => ({
 
       switch (data.type) {
         case "chunk":
-          set((s) => ({ streamContent: s.streamContent + data.payload }));
+          set((s) => ({ streamContent: s.streamContent + data.payload, activeToolCall: null }));
           break;
+
+        case "tool_call":
+          set({ activeToolCall: { name: data.payload.name, status: "calling" } });
+          break;
+
+        case "tool_result": {
+          const state = get();
+          const toolMsg: Message = {
+            id: crypto.randomUUID(),
+            session_id: state.currentSession?.id || "",
+            role: "tool",
+            content: data.payload.content,
+            tool_call_id: data.payload.tool_call_id,
+            created_at: new Date().toISOString(),
+          };
+          set((s) => ({
+            messages: [...s.messages, toolMsg],
+            activeToolCall: { name: state.activeToolCall?.name || "tool", status: "done" },
+          }));
+          break;
+        }
+
         case "done": {
           const state = get();
           const assistantMsg: Message = {
@@ -108,11 +138,13 @@ export const useChat = create<ChatState>((set, get) => ({
             messages: [...s.messages, assistantMsg],
             isStreaming: false,
             streamContent: "",
+            activeToolCall: null,
           }));
           break;
         }
+
         case "error":
-          set({ isStreaming: false, streamContent: "" });
+          set({ isStreaming: false, streamContent: "", activeToolCall: null });
           break;
       }
     };

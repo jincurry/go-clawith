@@ -2,29 +2,34 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jincurry/go-clawith/internal/llm"
 	"github.com/jincurry/go-clawith/internal/model"
 	"github.com/jincurry/go-clawith/internal/repository"
+	"github.com/jincurry/go-clawith/internal/ws"
 )
 
 type ChatService struct {
-	chatRepo  *repository.ChatRepository
-	agentRepo *repository.AgentRepository
-	llmReg    *llm.Registry
+	chatRepo    *repository.ChatRepository
+	agentRepo   *repository.AgentRepository
+	agentRunner *AgentRunner
+	llmReg      *llm.Registry
 }
 
 func NewChatService(
 	chatRepo *repository.ChatRepository,
 	agentRepo *repository.AgentRepository,
+	agentRunner *AgentRunner,
 	llmReg *llm.Registry,
 ) *ChatService {
 	return &ChatService{
-		chatRepo:  chatRepo,
-		agentRepo: agentRepo,
-		llmReg:    llmReg,
+		chatRepo:    chatRepo,
+		agentRepo:   agentRepo,
+		agentRunner: agentRunner,
+		llmReg:      llmReg,
 	}
 }
 
@@ -76,6 +81,7 @@ func (s *ChatService) GetMessages(sessionID uuid.UUID, page, pageSize int) ([]mo
 	return s.chatRepo.ListMessages(sessionID, offset, pageSize)
 }
 
+// SendMessage handles synchronous chat with full tool-calling loop.
 func (s *ChatService) SendMessage(ctx context.Context, sessionID uuid.UUID, input SendMessageInput) (*model.Message, error) {
 	session, err := s.chatRepo.GetSession(sessionID)
 	if err != nil {
@@ -103,26 +109,19 @@ func (s *ChatService) SendMessage(ctx context.Context, sessionID uuid.UUID, inpu
 
 	messages := s.buildLLMMessages(agent, history)
 
-	provider, err := s.llmReg.Get(agent.Provider)
+	result, err := s.agentRunner.Run(ctx, agent, messages)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("agent error: %w", err)
 	}
 
-	resp, err := provider.Complete(ctx, &llm.CompletionRequest{
-		Model:       agent.Model,
-		Messages:    messages,
-		Temperature: agent.Temperature,
-		MaxTokens:   agent.MaxTokens,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("llm error: %w", err)
-	}
+	// Save tool call trace messages
+	s.saveTraceMessages(sessionID, result.Messages)
 
 	assistantMsg := &model.Message{
 		SessionID:  sessionID,
 		Role:       "assistant",
-		Content:    resp.Content,
-		TokenCount: resp.TokensUsed,
+		Content:    result.Content,
+		TokenCount: result.TokensUsed,
 	}
 	if err := s.chatRepo.CreateMessage(assistantMsg); err != nil {
 		return nil, err
@@ -131,7 +130,10 @@ func (s *ChatService) SendMessage(ctx context.Context, sessionID uuid.UUID, inpu
 	return assistantMsg, nil
 }
 
-func (s *ChatService) StreamMessage(ctx context.Context, sessionID uuid.UUID, content string) (<-chan llm.StreamChunk, error) {
+// StreamMessage handles WebSocket streaming with tool-calling loop.
+// Tool calls are resolved first (non-streaming), then the final response is streamed.
+// Tool call events are pushed to the client via hub.
+func (s *ChatService) StreamMessage(ctx context.Context, sessionID uuid.UUID, content string, hub *ws.Hub, userID uuid.UUID) (<-chan llm.StreamChunk, error) {
 	session, err := s.chatRepo.GetSession(sessionID)
 	if err != nil {
 		return nil, err
@@ -158,18 +160,39 @@ func (s *ChatService) StreamMessage(ctx context.Context, sessionID uuid.UUID, co
 
 	messages := s.buildLLMMessages(agent, history)
 
-	provider, err := s.llmReg.Get(agent.Provider)
+	stream, traceMessages, err := s.agentRunner.StreamWithTools(ctx, agent, messages)
 	if err != nil {
 		return nil, err
 	}
 
-	return provider.Stream(ctx, &llm.CompletionRequest{
-		Model:       agent.Model,
-		Messages:    messages,
-		Temperature: agent.Temperature,
-		MaxTokens:   agent.MaxTokens,
-		Stream:      true,
-	})
+	// Notify client about tool calls that happened
+	for _, tm := range traceMessages {
+		if tm.Role == "assistant" && len(tm.ToolCalls) > 0 {
+			for _, tc := range tm.ToolCalls {
+				hub.SendToUser(userID, ws.WSMessage{
+					Type: "tool_call",
+					Payload: map[string]string{
+						"name":      tc.Name,
+						"arguments": tc.Arguments,
+					},
+				})
+			}
+		}
+		if tm.Role == "tool" {
+			hub.SendToUser(userID, ws.WSMessage{
+				Type: "tool_result",
+				Payload: map[string]string{
+					"tool_call_id": tm.ToolCallID,
+					"content":      truncate(tm.Content, 500),
+				},
+			})
+		}
+	}
+
+	// Save trace messages
+	s.saveTraceMessages(sessionID, traceMessages)
+
+	return stream, nil
 }
 
 func (s *ChatService) SaveAssistantMessage(sessionID uuid.UUID, content string, tokenCount int) error {
@@ -198,12 +221,42 @@ func (s *ChatService) buildLLMMessages(agent *model.Agent, history []model.Messa
 	}
 
 	for _, m := range history {
-		msgs = append(msgs, llm.Message{
+		msg := llm.Message{
 			Role:       m.Role,
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
-		})
+		}
+		if m.Role == "assistant" && m.ToolName != "" {
+			// Reconstruct tool calls from saved messages
+			var toolCalls []llm.ToolCall
+			json.Unmarshal([]byte(m.ToolName), &toolCalls)
+			msg.ToolCalls = toolCalls
+		}
+		msgs = append(msgs, msg)
 	}
 
 	return msgs
+}
+
+func (s *ChatService) saveTraceMessages(sessionID uuid.UUID, messages []llm.Message) {
+	for _, m := range messages {
+		msg := &model.Message{
+			SessionID:  sessionID,
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+		}
+		if len(m.ToolCalls) > 0 {
+			data, _ := json.Marshal(m.ToolCalls)
+			msg.ToolName = string(data)
+		}
+		s.chatRepo.CreateMessage(msg)
+	}
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }

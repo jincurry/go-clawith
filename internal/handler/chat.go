@@ -201,7 +201,7 @@ func (h *ChatHandler) readPump(client *ws.Client) {
 func (h *ChatHandler) handleStreamChat(client *ws.Client, sessionID uuid.UUID, content string) {
 	ctx := context.Background()
 
-	streamCh, err := h.chatSvc.StreamMessage(ctx, sessionID, content)
+	streamCh, err := h.chatSvc.StreamMessage(ctx, sessionID, content, h.hub, client.UserID)
 	if err != nil {
 		errMsg, _ := json.Marshal(ws.WSMessage{Type: "error", Payload: err.Error()})
 		client.Send <- errMsg
